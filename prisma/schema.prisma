@@ -1,0 +1,202 @@
+// DateSpark / Paint The Town — data model
+// All user data is sensitive PII. Hard constraints (allergies, accessibility,
+// budget ceiling, max distance) are modeled explicitly and are NEVER violated.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // pgvector for preference embeddings used in matching.
+  extensions = [vector]
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  ageRange  String? // e.g. "25-34" — coarse by design
+  pronouns  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Optional partner link (self-relation). Either user may initiate.
+  partnerId String?
+  partner   User?   @relation("PartnerLink", fields: [partnerId], references: [id])
+  linkedBy  User[]  @relation("PartnerLink")
+
+  location     Location?
+  budget       BudgetProfile?
+  preferences  Preferences?
+  availability Availability?
+
+  requests DateRequest[]
+  ideas    DateIdea[]
+  feedback Feedback[]
+}
+
+// ---------------------------------------------------------------------------
+// Location & travel  (maxDistance* are HARD constraints)
+// ---------------------------------------------------------------------------
+
+enum TransportMode {
+  WALK
+  TRANSIT
+  CAR
+  RIDESHARE
+}
+
+model Location {
+  id           String        @id @default(cuid())
+  userId       String        @unique
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  city         String
+  neighborhood String?
+  lat          Float?
+  lng          Float?
+  // Willingness to travel — HARD ceilings used to exclude infeasible venues.
+  maxMiles     Float?
+  maxMinutes   Int?
+  transport    TransportMode @default(WALK)
+}
+
+// ---------------------------------------------------------------------------
+// Budget  (ceiling is a HARD constraint — never rounded up)
+// ---------------------------------------------------------------------------
+
+enum BudgetBasis {
+  PER_PERSON
+  PER_COUPLE
+}
+
+model BudgetProfile {
+  id          String      @id @default(cuid())
+  userId      String      @unique
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  minCents    Int         @default(0)
+  // HARD ceiling. Generation must never exceed this.
+  ceilingCents Int
+  basis       BudgetBasis @default(PER_COUPLE)
+  // Learned typical spend over time (running average), for ranking only.
+  typicalSpendCents Int?
+}
+
+// ---------------------------------------------------------------------------
+// Preferences — hard constraints vs soft preferences are explicitly separated
+// ---------------------------------------------------------------------------
+
+model Preferences {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // HARD constraints — never violated.
+  allergies         String[] @default([]) // e.g. ["peanuts", "shellfish"]
+  dietary           String[] @default([]) // e.g. ["vegetarian", "halal"]
+  accessibilityNeeds String[] @default([]) // e.g. ["wheelchair", "step-free"]
+
+  // SOFT preferences — used for ranking only.
+  cuisinesLove   String[] @default([])
+  cuisinesLike   String[] @default([])
+  cuisinesAvoid  String[] @default([]) // strong dislike, soft — down-rank not exclude
+  activityTypes  String[] @default([]) // outdoors, arts, nightlife, low-key, foodie...
+  vibes          String[] @default([]) // romantic, fun, chill, fancy
+  alcoholOk      Boolean  @default(true)
+
+  // Preference embedding for venue/activity matching (pgvector).
+  // Dimension depends on the embedding model; adjust the migration accordingly.
+  embedding Unsupported("vector(1536)")?
+}
+
+// ---------------------------------------------------------------------------
+// Schedule / availability
+// ---------------------------------------------------------------------------
+
+model Availability {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeknights      Boolean  @default(true)
+  weekendDays     Boolean  @default(true)
+  preferredTimes  String[] @default([]) // e.g. ["evening", "afternoon"]
+  typicalDuration Int? // minutes
+}
+
+// ---------------------------------------------------------------------------
+// Requests, generated ideas, and feedback
+// ---------------------------------------------------------------------------
+
+enum Occasion {
+  ANNIVERSARY
+  FIRST_DATE
+  CELEBRATION
+  CASUAL
+  SURPRISE
+  SOLO
+}
+
+model DateRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occasion  Occasion @default(CASUAL)
+  // Per-request overrides (optional). Snapshot of constraints at request time.
+  contextJson Json?
+  createdAt DateTime @default(now())
+  ideas     DateIdea[]
+}
+
+enum IdeaTier {
+  SAFE
+  NOVEL
+  SPLURGE
+}
+
+model DateIdea {
+  id            String      @id @default(cuid())
+  requestId     String
+  request       DateRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title         String
+  pitch         String      @db.Text
+  tier          IdeaTier    @default(SAFE)
+  // Concrete plan: timeline steps, venues, booking actions — see TS types.
+  planJson      Json
+  estCostCents  Int
+  costBreakdown Json
+  travelMinutes Int?
+  isStretch     Boolean     @default(false) // slightly-over-budget, clearly labeled
+
+  createdAt DateTime @default(now())
+  feedback  Feedback[]
+}
+
+enum FeedbackKind {
+  SAVED
+  BOOKED
+  COMPLETED
+  REJECTED
+}
+
+model Feedback {
+  id       String       @id @default(cuid())
+  userId   String
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ideaId   String
+  idea     DateIdea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  kind     FeedbackKind
+  stars    Int? // 1-5
+  notes    String?      @db.Text // "loved the rooftop, too loud though"
+  createdAt DateTime    @default(now())
+
+  @@index([userId, ideaId])
+}
