@@ -1,11 +1,4 @@
-import type { Venue } from "@/lib/types";
-
-/**
- * Clean, swappable provider interfaces. Every integration sits behind one of
- * these so providers can be replaced without touching generation logic.
- * Each implementation must handle auth, rate limits, retries, and graceful
- * fallback when the upstream API is unavailable.
- */
+import type { GeoPoint, ResolvedPlace, Venue } from "@/lib/types";
 
 export interface PlacesProvider {
   searchVenues(query: PlacesQuery): Promise<Venue[]>;
@@ -22,7 +15,6 @@ export interface PlacesQuery {
 }
 
 export interface TravelProvider {
-  /** Returns travel minutes per destination venue id. */
   travelMinutes(
     origin: { lat: number; lng: number },
     destinations: Array<{ id: string; lat: number; lng: number }>,
@@ -31,16 +23,13 @@ export interface TravelProvider {
 }
 
 export interface ReservationProvider {
-  /** Availability check. May return [] when no partner API is configured. */
   availability(venue: Venue, when: Date, partySize: number): Promise<ReservationSlot[]>;
-  /** Returns a deep link/handoff. Never auto-books — user always confirms. */
   bookingHandoff(venue: Venue, slot?: ReservationSlot): ReservationHandoff;
 }
 
 export interface ReservationSlot {
-  time: string; // ISO
+  time: string;
   partySize: number;
-  /** True only when a real partner API can complete the booking in-app. */
   bookableInApp: boolean;
 }
 
@@ -54,7 +43,11 @@ export interface EventsProvider {
   searchEvents(query: PlacesQuery & { dateFrom: string; dateTo: string }): Promise<Venue[]>;
 }
 
-/** Shared retry helper contract — implementations import from ./http. */
+export interface GeocodeProvider {
+  /** Resolve coordinates to a city/neighborhood. Returns null on failure. */
+  reverse(point: GeoPoint): Promise<ResolvedPlace | null>;
+}
+
 export interface RetryOptions {
   retries: number;
   baseDelayMs: number;

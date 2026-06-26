@@ -1,5 +1,5 @@
-// Provider registry. Swap implementations here without touching call sites.
 export { googlePlaces, googleTravel } from "./googleMaps";
+export { googleGeocode } from "./geocode";
 export { resy } from "./resy";
 export { openTable } from "./opentable";
 export { ticketmaster } from "./ticketmaster";
@@ -12,17 +12,19 @@ export type {
   ReservationSlot,
   ReservationHandoff,
   EventsProvider,
+  GeocodeProvider,
 } from "./types";
 
 import { googlePlaces, googleTravel } from "./googleMaps";
+import { googleGeocode } from "./geocode";
 import { resy } from "./resy";
 import { openTable } from "./opentable";
 import { ticketmaster } from "./ticketmaster";
 
-/** Default wiring. Reservation provider can be chosen per venue/market. */
 export const providers = {
   places: googlePlaces,
   travel: googleTravel,
+  geocode: googleGeocode,
   reservations: { resy, openTable },
   events: ticketmaster,
 } as const;
