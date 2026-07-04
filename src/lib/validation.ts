@@ -4,7 +4,7 @@ import { z } from "zod";
 // the budget ceiling and at least the city must always be present.
 export const generateRequestSchema = z.object({
   occasion: z
-    .enum(["ANNIVERSARY", "FIRST_DATE", "CELEBRATION", "CASUAL", "SURPRISE", "SOLO"])
+    .enum(["ANNIVERSARY", "FIRST_DATE", "CELEBRATION", "CASUAL", "SURPRISE", "SOLO", "GROUP"])
     .default("CASUAL"),
   homeBase: z.object({
     city: z.string().min(1),

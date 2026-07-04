@@ -24,7 +24,8 @@ export type Occasion =
   | "CELEBRATION"
   | "CASUAL"
   | "SURPRISE"
-  | "SOLO";
+  | "SOLO"
+  | "GROUP";
 
 export interface HardConstraints {
   budgetCeilingCents: number;

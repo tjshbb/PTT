@@ -12,6 +12,7 @@ const OCCASIONS: Occasion[] = [
   "CELEBRATION",
   "SURPRISE",
   "SOLO",
+  "GROUP",
 ];
 
 export default function GenerateIdeasPanel() {
@@ -47,7 +48,7 @@ export default function GenerateIdeasPanel() {
 
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-neutral-500">Budget (per couple)</span>
+          <span className="text-xs uppercase tracking-wide text-neutral-500">Budget</span>
           <span className="flex items-center gap-2">
             <span className="text-neutral-500">$</span>
             <input
