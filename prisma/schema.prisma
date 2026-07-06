@@ -140,6 +140,7 @@ enum Occasion {
   CASUAL
   SURPRISE
   SOLO
+  GROUP
 }
 
 model DateRequest {

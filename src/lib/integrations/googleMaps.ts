@@ -2,17 +2,22 @@ import type { Venue } from "@/lib/types";
 import { fetchJson, IntegrationError } from "./http";
 import type { PlacesProvider, PlacesQuery, TravelProvider } from "./types";
 
-/**
- * Google Maps Platform — Places (search/details) + Distance Matrix (travel).
- *
- * NOTE: response shapes below follow the documented Places API (v1) and
- * Distance Matrix API as of this writing, but field names should be verified
- * against the live API before relying on them in production.
- * TODO(verify): confirm Places API (New) field masks + Distance Matrix schema.
- */
-
 const PLACES_BASE = "https://places.googleapis.com/v1";
 const DISTANCE_BASE = "https://maps.googleapis.com/maps/api/distancematrix/json";
+
+const DEFAULT_INCLUDED_TYPES = [
+  "restaurant",
+  "cafe",
+  "bar",
+  "bakery",
+  "tourist_attraction",
+  "art_gallery",
+  "museum",
+  "park",
+  "movie_theater",
+  "bowling_alley",
+  "night_club",
+];
 
 function apiKey(): string {
   const k = process.env.GOOGLE_MAPS_API_KEY;
@@ -22,14 +27,14 @@ function apiKey(): string {
 
 export const googlePlaces: PlacesProvider = {
   async searchVenues(query: PlacesQuery): Promise<Venue[]> {
-    // TODO(verify): Places API (New) Text/Nearby Search request body & FieldMask.
     const body = {
-      includedTypes: query.category ? [query.category] : undefined,
+      includedTypes: query.category ? [query.category] : DEFAULT_INCLUDED_TYPES,
       maxResultCount: 20,
+      rankPreference: "POPULARITY",
       locationRestriction: {
         circle: {
           center: { latitude: query.near.lat, longitude: query.near.lng },
-          radius: query.radiusMeters,
+          radius: Math.min(Math.max(query.radiusMeters, 1), 50000),
         },
       },
     };
@@ -62,7 +67,7 @@ export const googlePlaces: PlacesProvider = {
       });
       return toVenue(place);
     } catch {
-      return null; // graceful fallback — caller drops this candidate
+      return null;
     }
   },
 };
@@ -86,7 +91,7 @@ export const googleTravel: TravelProvider = {
       });
       return out;
     } catch {
-      return {}; // fallback: unknown travel times → generation treats as no ceiling failure
+      return {};
     }
   },
 };
@@ -132,7 +137,6 @@ function priceLevelToNumber(level?: string): number | undefined {
   return level ? map[level] : undefined;
 }
 
-// --- Upstream response shapes (subset; verify against live API) ---
 interface GooglePlace {
   id: string;
   displayName?: { text: string };

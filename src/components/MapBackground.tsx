@@ -16,33 +16,39 @@ const DEFAULT_ZOOM = 14;
 
 const SCRIPT_ID = "google-maps-js";
 
-function loadGoogleMaps(apiKey: string): Promise<typeof google> {
+const CALLBACK_NAME = "__paintTheTownInitMaps__";
+
+function loadMapConstructor(apiKey: string): Promise<typeof google.maps.Map> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("Google Maps can only load in the browser."));
   }
-  if (window.google?.maps) {
-    return Promise.resolve(window.google);
-  }
-
-  const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(window.google!));
-      existing.addEventListener("error", () =>
-        reject(new Error("Failed to load the Google Maps script.")),
-      );
-    });
+  if (window.google?.maps?.Map) {
+    return Promise.resolve(window.google.maps.Map);
   }
 
   return new Promise((resolve, reject) => {
+    const finish = () => {
+      if (window.google?.maps?.Map) resolve(window.google.maps.Map);
+      else reject(new Error("Google Maps loaded but the Map constructor is missing."));
+    };
+
+    const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", finish);
+      existing.addEventListener("error", () =>
+        reject(new Error("Failed to load the Google Maps script.")),
+      );
+      return;
+    }
+
+    (window as unknown as Record<string, () => void>)[CALLBACK_NAME] = finish;
+
     const script = document.createElement("script");
     script.id = SCRIPT_ID;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-      apiKey,
-    )}&loading=async`;
+    script.src =
+      `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
+      `&loading=async&libraries=maps&callback=${CALLBACK_NAME}`;
     script.async = true;
-    script.defer = true;
-    script.onload = () => resolve(window.google!);
     script.onerror = () => reject(new Error("Failed to load the Google Maps script."));
     document.head.appendChild(script);
   });
@@ -68,7 +74,6 @@ export default function MapBackground({
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      console.warn("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set; skipping background map.");
       setReason("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set (restart `npm run dev`).");
       setFailed(true);
       return;
@@ -76,10 +81,10 @@ export default function MapBackground({
 
     let cancelled = false;
 
-    loadGoogleMaps(apiKey)
-      .then((g) => {
+    loadMapConstructor(apiKey)
+      .then((MapCtor) => {
         if (cancelled || !containerRef.current) return;
-        mapRef.current = new g.maps.Map(containerRef.current, {
+        mapRef.current = new MapCtor(containerRef.current, {
           center: followUserLocation && pointRef.current ? pointRef.current : center,
           zoom,
           disableDefaultUI: true,

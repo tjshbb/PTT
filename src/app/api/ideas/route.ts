@@ -6,14 +6,6 @@ import type { UserProfile, Venue } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-/**
- * POST /api/ideas
- * Body: GenerateRequestBody (see src/lib/validation.ts)
- * Returns 3-5 date ideas that respect all hard constraints.
- *
- * Pipeline: fetch candidate venues (Places + events) → compute travel times →
- * run generation (filter hard, rank soft, build plan, respect budget).
- */
 export async function POST(req: Request): Promise<NextResponse> {
   let body: unknown;
   try {
@@ -36,8 +28,6 @@ export async function POST(req: Request): Promise<NextResponse> {
       ? { lat: input.homeBase.lat, lng: input.homeBase.lng }
       : null;
 
-  // Fetch candidates. If we have no coordinates we can't query providers yet —
-  // return a clear error rather than fabricating venues.
   if (!origin) {
     return NextResponse.json(
       { error: "homeBase.lat/lng required to query venue providers" },
@@ -45,23 +35,33 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  let candidates: Venue[] = [];
-  try {
-    const radiusMeters = Math.round((input.hard.maxMiles ?? 5) * 1609);
-    const [places, events] = await Promise.all([
-      providers.places.searchVenues({ near: origin, radiusMeters }),
-      providers.events.searchEvents({
-        near: origin,
-        radiusMeters,
-        dateFrom: new Date().toISOString(),
-        dateTo: new Date(Date.now() + 14 * 864e5).toISOString(),
-      }),
-    ]);
-    candidates = [...places, ...events];
-  } catch (err) {
-    // Providers handle their own retries/fallback; a throw here is unexpected.
+  const candidates: Venue[] = [];
+  const radiusMeters = Math.round((input.hard.maxMiles ?? 5) * 1609);
+
+  const [placesRes, eventsRes] = await Promise.allSettled([
+    providers.places.searchVenues({ near: origin, radiusMeters }),
+    providers.events.searchEvents({
+      near: origin,
+      radiusMeters,
+      dateFrom: new Date().toISOString(),
+      dateTo: new Date(Date.now() + 14 * 864e5).toISOString(),
+    }),
+  ]);
+
+  if (placesRes.status === "fulfilled") {
+    candidates.push(...placesRes.value);
+  } else {
+    console.error("Places provider failed:", placesRes.reason);
+  }
+  if (eventsRes.status === "fulfilled") {
+    candidates.push(...eventsRes.value);
+  } else {
+    console.error("Events provider failed:", eventsRes.reason);
+  }
+
+  if (candidates.length === 0 && placesRes.status === "rejected") {
     return NextResponse.json(
-      { error: "Venue providers unavailable", detail: String(err) },
+      { error: "Venue providers unavailable", detail: String(placesRes.reason) },
       { status: 502 },
     );
   }
@@ -73,7 +73,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   );
 
   const profile: UserProfile = {
-    userId: "anonymous", // TODO: replace with session user id once auth is wired
+    userId: "anonymous",
     homeBase: input.homeBase,
     transport: input.transport,
     hard: input.hard,
